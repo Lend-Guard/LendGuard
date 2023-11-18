@@ -9,11 +9,18 @@ contract LendGuard {
     // Owner of the contract
     address private _owner;
 
-    L2Pool public pool;
+    // Minimum health factor for Aave
+    uint256 internal constant MIN_HEALTH_FACTOR = 1000000000000000000;
+
+    uint256 public NOTIFICATION_THRESHOLD;
+    uint256 public REBALANCE_THRESHOLD;
+    uint256 public TARGET_HEALTH_FACTOR;
+
     address public POOL_ADDRESS = 0x794a61358D6845594F94dc1DB02A252b5b4814aD; // Arbitrum L2 Aave pool
+    L2Pool public pool;
 
     // LendGuard keeper
-    address internal KEEPER;
+    address public KEEPER;
 
     // Check if keeper is initialized
     modifier onlyKeeper {
@@ -21,7 +28,8 @@ contract LendGuard {
         _;
     }
 
-    modifier onlyOwner {
+    // Check if the caller is the owner
+    modifier onlyOwner() {
         require(msg.sender == owner(), "only owner");
         _;
     }
@@ -35,7 +43,17 @@ contract LendGuard {
         _;
     }
 
-    constructor() {
+    /**
+    * @notice Constructor
+    * @param notificationThreshold The health factor threshold at which the notification should be triggered
+    * @param rebalanceThreshold The health factor threshold at which the rebalance should be triggered
+    * @param targetHealthFactor The health factor that we want to maintain
+    */
+    constructor(uint256 notificationThreshold, uint256 rebalanceThreshold, uint256 targetHealthFactor) {
+        require(notificationThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        require(rebalanceThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        require(targetHealthFactor > MIN_HEALTH_FACTOR, "target must be greater than 1");
+
         pool = L2Pool(POOL_ADDRESS);
         _owner = msg.sender;
     }
@@ -81,8 +99,20 @@ contract LendGuard {
     * @param referralCode Code used to register the integrator originating the operation, for potential rewards.
     *   0 if the action is executed directly by the user, without any middle-man
     */
-    function deposit(address asset, uint256 amount, uint16 referralCode) external multipleAccess {
+    function deposit(address asset, uint256 amount, uint16 referralCode) public onlyOwner() {
         IERC20(asset).transferFrom(msg.sender, address(this), amount);
+        IERC20(asset).approve(address(pool), amount);
+        pool.deposit(asset, amount, address(this), referralCode);
+    }
+
+    /**
+    * @notice The same as deposit but called by the keeper.
+    * @param asset The address of the underlying asset to supply
+    * @param amount The amount to be supplied
+    * @param referralCode Code used to register the integrator originating the operation, for potential rewards.
+    */
+    function depositByKeeper(address asset, uint amount, uint16 referralCode) internal onlyKeeper() {
+        IERC20(asset).transferFrom(owner(), address(this), amount);
         IERC20(asset).approve(address(pool), amount);
         pool.deposit(asset, amount, address(this), referralCode);
     }
@@ -116,13 +146,10 @@ contract LendGuard {
     * @param referralCode The code used to register the integrator originating the operation, for potential rewards.
     *   0 if the action is executed directly by the user, without any middle-man
     */
-    function borrow(
-        address asset,
-        uint256 amount,
-        uint256 interestRateMode,
-        uint16 referralCode,
-        address onBehalfOf
-    ) external onlyOwner {
+    function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode)
+        external
+        onlyOwner
+    {
         pool.borrow(asset, amount, interestRateMode, referralCode, address(this));
     }
 
@@ -133,17 +160,68 @@ contract LendGuard {
     * @param amount The amount to repay
     * - Send the value type(uint256).max in order to repay the whole debt for `asset` on the specific `debtMode`
     * @param interestRateMode The interest rate mode at of the debt the user wants to repay: 1 for Stable, 2 for Variable
-    * @param onBehalfOf The address of the user who will get his debt reduced/removed. Should be the address of the
-    * user calling the function if he wants to reduce/remove his own debt, or the address of any other
-    * other borrower whose debt should be removed
     * @return The final amount repaid
     */
-    function repay(
-        address asset,
-        uint256 amount,
-        uint256 interestRateMode,
-        address onBehalfOf
-    ) external multipleAccess() returns (uint256) {
-        return pool.repay(asset, amount, interestRateMode, onBehalfOf);
+    function repay(address asset, uint256 amount, uint256 interestRateMode)
+        external
+        multipleAccess
+        returns (uint256)
+    {   
+        IERC20(asset).approve(address(pool), amount);
+        return pool.repay(asset, amount, interestRateMode, address(this));
+    }
+
+    /**
+    * @notice Check if the health factor of the vault is below the notification threshold
+    */
+    function requireNotification() external view returns (bool) {
+        return getVaultHealthFactor() < NOTIFICATION_THRESHOLD;
+    }
+
+    /**
+    * @notice Check if the health factor of the vault is below the rebalance threshold
+    */
+    function requireRebalance() external view returns (bool) {
+        return getVaultHealthFactor() < REBALANCE_THRESHOLD;
+    }
+
+    /**
+    * @notice Rebalance the vault
+    * @param tokens The list of tokens to add to the vault
+    * @param amounts The list of amounts to add to the vault
+    */
+    function rebalance(address[] memory tokens, uint256[] memory amounts) external multipleAccess() {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            uint256 balance = IERC20(tokens[i]).balanceOf(owner());
+            uint256 actualAmount = Math.min(balance, amounts[i]);
+            depositByKeeper(tokens[i], actualAmount, 0);
+        }
+    }
+
+    /**
+    * @notice Update the notification threshold
+    * @param newThreshold The new threshold
+    */
+    function updateNotificationThreshold(uint256 newThreshold) external onlyOwner {
+        require(newThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        NOTIFICATION_THRESHOLD = newThreshold;
+    }
+
+    /**
+    * @notice Update the rebalance threshold
+    * @param newThreshold The new threshold
+    */
+    function updateRebalanceThreshold(uint256 newThreshold) external onlyOwner {
+        require(newThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        REBALANCE_THRESHOLD = newThreshold;
+    }
+
+    /**
+    * @notice Update the target health factor
+    * @param newTarget The new target
+    */
+    function updateTargetHealthFactor(uint256 newTarget) external onlyOwner {
+        require(newTarget > MIN_HEALTH_FACTOR, "target must be greater than 1");
+        TARGET_HEALTH_FACTOR = newTarget;
     }
 }

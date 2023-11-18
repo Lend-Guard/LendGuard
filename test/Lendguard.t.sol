@@ -17,5 +17,24 @@ contract LendGuardTest is Test {
         testToken = 0x3F56e0c36d275367b8C502090EDF38289b3dEa0d;
     }
 
+    function test_updateNotificationThreshold() public {
+        lendGuard.updateNotificationThreshold(1100000000000000000);
+        assertEq(lendGuard.NOTIFICATION_THRESHOLD(), 1100000000000000000);
+    }
+
+    function test_updateRebalanceThreshold() public {
+        lendGuard.updateRebalanceThreshold(1100000000000000000);
+        assertEq(lendGuard.REBALANCE_THRESHOLD(), 1100000000000000000);
+    }
+
+    function test_updateTargetHealthFactor() public {
+        lendGuard.updateTargetHealthFactor(1100000000000000000);
+        assertEq(lendGuard.TARGET_HEALTH_FACTOR(), 1100000000000000000);
+    }
+
+    function test_Keeper() public {
+        lendGuard.setKeeper(address(0x3F56e0c36d275367b8C502090EDF38289b3dEa0d));
+        assertEq(lendGuard.KEEPER(), address(0x3F56e0c36d275367b8C502090EDF38289b3dEa0d));
+    }
 }
 
