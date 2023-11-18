@@ -2,30 +2,33 @@
 pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../lib/aave-v3-core/contracts/protocol/pool/L2Pool.sol";
 
-
-
 contract LendGuard {
+
     // Owner of the contract
     address private _owner;
 
-    L2Pool public pool;
-    address public POOL_ADDRESS = 0x794a61358D6845594F94dc1DB02A252b5b4814aD; // Arbitrum L2 Aave pool
+    // Minimum health factor for Aave
+    uint256 internal constant MIN_HEALTH_FACTOR = 1000000000000000000;
+
     uint256 public NOTIFICATION_THRESHOLD;
     uint256 public REBALANCE_THRESHOLD;
     uint256 public TARGET_HEALTH_FACTOR;
 
+    address public POOL_ADDRESS = 0x794a61358D6845594F94dc1DB02A252b5b4814aD; // Arbitrum L2 Aave pool
+    L2Pool public pool;
+
     // LendGuard keeper
-    address internal KEEPER;
+    address public KEEPER;
 
     // Check if keeper is initialized
-    modifier onlyKeeper() {
+    modifier onlyKeeper {
         require(msg.sender == KEEPER, "only keeper");
         _;
     }
 
+    // Check if the caller is the owner
     modifier onlyOwner() {
         require(msg.sender == owner(), "only owner");
         _;
@@ -34,8 +37,8 @@ contract LendGuard {
     /**
     * @notice Modifier to check if the caller is the owner or the keeper
     * @dev It is used for rebalancer functions
-    */
-    modifier multipleAccess() {
+    **/
+    modifier multipleAccess {
         require(msg.sender == KEEPER || msg.sender == owner(), "only keeper or owner");
         _;
     }
@@ -47,17 +50,18 @@ contract LendGuard {
     * @param targetHealthFactor The health factor that we want to maintain
     */
     constructor(uint256 notificationThreshold, uint256 rebalanceThreshold, uint256 targetHealthFactor) {
+        require(notificationThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        require(rebalanceThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        require(targetHealthFactor > MIN_HEALTH_FACTOR, "target must be greater than 1");
+
         pool = L2Pool(POOL_ADDRESS);
         _owner = msg.sender;
-        NOTIFICATION_THRESHOLD = notificationThreshold;
-        REBALANCE_THRESHOLD = rebalanceThreshold;
-        TARGET_HEALTH_FACTOR = targetHealthFactor;
     }
 
     /**
     * @notice Returns the address of the owner
     * @return The address of the owner
-    */
+    **/
     function owner() public view returns (address) {
         return _owner;
     }
@@ -67,10 +71,10 @@ contract LendGuard {
     * A healt factor of 1e18 means the position is healthy, and decreases from there.
     * @param user The address of the user
     * @return The health factor of the user
-    */
+    **/
     function getUserHealtFactor(address user) public view returns (uint256) {
         uint256 healthFactor;
-        (,,,,, healthFactor) = pool.getUserAccountData(user);
+        (,,,,,healthFactor) = pool.getUserAccountData(user);
         return healthFactor;
     }
 
@@ -78,33 +82,14 @@ contract LendGuard {
     * @notice Returns the health factor of the reserve. The health factor is returned on a scale of 1e18.
     * A healt factor of 1e18 means the position is healthy, and decreases from there.
     * @return The health factor of the reserve
-    */
+    **/
     function getVaultHealthFactor() public view returns (uint256) {
         return getUserHealtFactor(address(this));
     }
 
-    /**
-    * @notice Returns Aave data position of the vault.
-    * @return totalCollateralBase The total collateral of the user in the base currency used by the price feed
-    * @return totalDebtBase The total debt of the user in the base currency used by the price feed
-    * @return availableBorrowsBase The borrowing power left of the user in the base currency used by the price feed
-    * @return currentLiquidationThreshold The liquidation threshold of the user
-    * @return ltv The loan to value of The user
-    * @return healthFactor The current health factor of the user
-    */
-    function getVaultAccountData() public view returns (uint256,uint256,uint256,uint256,uint256,uint256) {
-        return pool.getUserAccountData(address(this));
-    }
-
-    /**
-    * @notice Set the keeper address to a new address
-    * @param keeper The address of the new keeper
-    */
     function setKeeper(address keeper) external onlyOwner {
         KEEPER = keeper;
     }
-
-
 
     /**
     * @notice Supplies an `amount` of underlying asset into the reserve, receiving in return overlying aTokens.
@@ -114,8 +99,20 @@ contract LendGuard {
     * @param referralCode Code used to register the integrator originating the operation, for potential rewards.
     *   0 if the action is executed directly by the user, without any middle-man
     */
-    function deposit(address asset, uint256 amount, uint16 referralCode) public multipleAccess {
+    function deposit(address asset, uint256 amount, uint16 referralCode) public onlyOwner() {
         IERC20(asset).transferFrom(msg.sender, address(this), amount);
+        IERC20(asset).approve(address(pool), amount);
+        pool.deposit(asset, amount, address(this), referralCode);
+    }
+
+    /**
+    * @notice The same as deposit but called by the keeper.
+    * @param asset The address of the underlying asset to supply
+    * @param amount The amount to be supplied
+    * @param referralCode Code used to register the integrator originating the operation, for potential rewards.
+    */
+    function depositByKeeper(address asset, uint amount, uint16 referralCode) internal onlyKeeper() {
+        IERC20(asset).transferFrom(owner(), address(this), amount);
         IERC20(asset).approve(address(pool), amount);
         pool.deposit(asset, amount, address(this), referralCode);
     }
@@ -149,7 +146,7 @@ contract LendGuard {
     * @param referralCode The code used to register the integrator originating the operation, for potential rewards.
     *   0 if the action is executed directly by the user, without any middle-man
     */
-    function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf)
+    function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode)
         external
         onlyOwner
     {
@@ -163,17 +160,15 @@ contract LendGuard {
     * @param amount The amount to repay
     * - Send the value type(uint256).max in order to repay the whole debt for `asset` on the specific `debtMode`
     * @param interestRateMode The interest rate mode at of the debt the user wants to repay: 1 for Stable, 2 for Variable
-    * @param onBehalfOf The address of the user who will get his debt reduced/removed. Should be the address of the
-    * user calling the function if he wants to reduce/remove his own debt, or the address of any other
-    * other borrower whose debt should be removed
     * @return The final amount repaid
     */
-    function repay(address asset, uint256 amount, uint256 interestRateMode, address onBehalfOf)
+    function repay(address asset, uint256 amount, uint256 interestRateMode)
         external
         multipleAccess
         returns (uint256)
-    {
-        return pool.repay(asset, amount, interestRateMode, onBehalfOf);
+    {   
+        IERC20(asset).approve(address(pool), amount);
+        return pool.repay(asset, amount, interestRateMode, address(this));
     }
 
     /**
@@ -195,11 +190,38 @@ contract LendGuard {
     * @param tokens The list of tokens to add to the vault
     * @param amounts The list of amounts to add to the vault
     */
-    function rebalance(address[] memory tokens, uint256[] memory amounts) external onlyKeeper {
+    function rebalance(address[] memory tokens, uint256[] memory amounts) external multipleAccess() {
         for (uint256 i = 0; i < tokens.length; i++) {
             uint256 balance = IERC20(tokens[i]).balanceOf(owner());
             uint256 actualAmount = Math.min(balance, amounts[i]);
-            deposit(tokens[i], actualAmount, 0);
+            depositByKeeper(tokens[i], actualAmount, 0);
         }
+    }
+
+    /**
+    * @notice Update the notification threshold
+    * @param newThreshold The new threshold
+    */
+    function updateNotificationThreshold(uint256 newThreshold) external onlyOwner {
+        require(newThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        NOTIFICATION_THRESHOLD = newThreshold;
+    }
+
+    /**
+    * @notice Update the rebalance threshold
+    * @param newThreshold The new threshold
+    */
+    function updateRebalanceThreshold(uint256 newThreshold) external onlyOwner {
+        require(newThreshold > MIN_HEALTH_FACTOR, "threshold must be greater than 0");
+        REBALANCE_THRESHOLD = newThreshold;
+    }
+
+    /**
+    * @notice Update the target health factor
+    * @param newTarget The new target
+    */
+    function updateTargetHealthFactor(uint256 newTarget) external onlyOwner {
+        require(newTarget > MIN_HEALTH_FACTOR, "target must be greater than 1");
+        TARGET_HEALTH_FACTOR = newTarget;
     }
 }
