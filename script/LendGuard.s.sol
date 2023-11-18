@@ -12,7 +12,7 @@ contract LendGuardDeployScript is Script {
 
         vm.startBroadcast(DEPLOYER_PRIVATE_KEY);
 
-        LendGuard guard = new LendGuard();
+        LendGuard guard = new LendGuard(1108528131707397017, 1098528131707397017, 1158528131707397017);
         console2.log("LendGuard deployed at:", address(guard));
 
         vm.stopBroadcast();
