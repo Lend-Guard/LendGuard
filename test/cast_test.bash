@@ -6,10 +6,10 @@ privateKey=""
 rpcUrl="localhost:8545"
 
 
-cast send $tokenAddress "approve(address,uint256)" $contractAddress 100000000000 --private-key 3dfc7036eeefc66a1760f836676e94a8c56577ee03c4eb5c5ffed7d8aa4a821d --rpc-url $rpcUrl
+cast send $tokenAddress "approve(address,uint256)" $contractAddress 100000000000 --private-key $privateKey --rpc-url $rpcUrl
 cast call $tokenAddress "allowance(address,address)(uint256)" $ownerAddress $contractAddress --rpc-url $rpcUrl
-cast send $contractAddress "deposit(address,uint256,uint16)" $tokenAddress 100000 0 --private-key 3dfc7036eeefc66a1760f836676e94a8c56577ee03c4eb5c5ffed7d8aa4a821d --rpc-url $rpcUrl
+cast send $contractAddress "deposit(address,uint256,uint16)" $tokenAddress 100000 0 --private-key $privateKey --rpc-url $rpcUrl
 cast call $pool "getUserAccountData(address)(uint256,uint256,uint256,uint256,uint256,uint256)" $contractAddress --rpc-url $rpcUrl
 cast call $pool "getUserAccountData(address)(uint256,uint256,uint256,uint256,uint256,uint256)" $ownerAddress --rpc-url $rpcUrl
-cast send $contractAddress "withdraw(address,uint256,address)" $tokenAddress 10000 $ownerAddress --private-key 3dfc7036eeefc66a1760f836676e94a8c56577ee03c4eb5c5ffed7d8aa4a821d --rpc-url $rpcUrl
+cast send $contractAddress "withdraw(address,uint256,address)" $tokenAddress 10000 $ownerAddress --private-key $privateKey --rpc-url $rpcUrl
 cast call $tokenAddress "balanceOf(address)(uint256)" $ownerAddress --rpc-url $rpcUrl

@@ -12,7 +12,7 @@ contract LendGuardTest is Test {
     address public testToken;
 
     function setUp() public {
-        lendGuard = new LendGuard();
+        lendGuard = new LendGuard(1108528131707397017, 1098528131707397017, 1158528131707397017);
         testToken = 0x3F56e0c36d275367b8C502090EDF38289b3dEa0d;
     }
 }
