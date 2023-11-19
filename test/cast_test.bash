@@ -1,12 +1,16 @@
+contractAddress=""
+factoryAddress=""
 tokenAddress=""
 pool=""
-contractAddress=""
 ownerAddress=""
 privateKey=""
 keeperAddress=""
 keeperPrvKey=""
 rpcUrl="localhost:8545"
 
+
+echo 'deploy contract through factory'
+cast send $factoryAddress "createLendGuard(uint256,uint256,uint256)(address)" 1200000000000000000 1200000000000000000 1200000000000000000 --private-key $privateKey --rpc-url $rpcUrl
 
 ehco 'make approve for token ' $tokenAddress
 cast send $tokenAddress "approve(address,uint256)" $contractAddress 100000000000000000 --private-key $privateKey --rpc-url $rpcUrl
@@ -42,10 +46,13 @@ echo 'borrow token ' $tokenAddress
 cast send $contractAddress "borrow(address, uint256, uint256, uint16)" $tokenAddress 100000 2 0 --private-key $privateKey --rpc-url $rpcUrl
 
 echo 'get vault data ' $contractAddress
-cast call $contractAddress "getVaultAccountData()(uint256,uint256,uint256,uint256,uint256,uint256)" --rpc-url $rpcUrl
+cast call $pool "getUserAccountData(address)(uint256,uint256,uint256,uint256,uint256,uint256)" $contractAddress --rpc-url $rpcUrl
 
 echo 'make repay for token ' $tokenAddress
 cast send $contractAddress "repay(address, uint256, uint256)" $tokenAddress 100000 2 --private-key $privateKey --rpc-url $rpcUrl
+
+echo 'get vault data ' $contractAddress
+cast call $pool "getUserAccountData(address)(uint256,uint256,uint256,uint256,uint256,uint256)" $contractAddress --rpc-url $rpcUrl
 
 echo 'withdraw money in token ' $tokenAddress
 cast send $contractAddress "withdraw(address,uint256,address)" $tokenAddress 1000000 $ownerAddress --private-key $privateKey --rpc-url $rpcUrl
@@ -59,3 +66,5 @@ cast send $contractAddress "setKeeper(address)" $keeperAddress --private-key $pr
 cast send $contractAddress "depositByKeeper(address,uint256,uint16)" $tokenAddress 1000000 0 --private-key $keeperPrvKey --rpc-url $rpcUrl
 
 cast send $contractAddress "rebalance(address[],uint256[])" "[$tokenAddress]" "[1000000]" --private-key $keeperPrvKey --rpc-url $rpcUrl
+
+cast call $pool "getUserAccountData(address)(uint256,uint256,uint256,uint256,uint256,uint256)" $contractAddress --rpc-url $rpcUrl
