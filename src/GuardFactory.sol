@@ -9,6 +9,8 @@ contract GuardFactory is Ownable {
     address public guardImplementation;
     address public defaultKeeper;
 
+    mapping(address => address) internal _guards;
+
     /**
      * @notice Constructor
      * @param _implementation The implementation of the LendGuard contract
@@ -50,5 +52,15 @@ contract GuardFactory is Ownable {
         LendGuard(guard).initialize(
             notificationThreshold, rebalanceThreshold, targetHealthFactor, msg.sender, defaultKeeper
         );
+
+        _guards[msg.sender] = guard;
+    }
+
+    /**
+    * @notice Get the LendGuard contract address for a user
+    * @param user The user address
+    */
+    function getUserGuard(address user) external view returns (address) {
+        return _guards[user];
     }
 }

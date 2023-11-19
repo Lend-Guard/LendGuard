@@ -12,6 +12,9 @@ rpcUrl="localhost:8545"
 echo 'deploy contract through factory'
 cast send $factoryAddress "createLendGuard(uint256,uint256,uint256)(address)" 1200000000000000000 1200000000000000000 1200000000000000000 --private-key $privateKey --rpc-url $rpcUrl
 
+echo 'get contract address'
+cast call $factoryAddress "getUserGuard(address)(address)" $ownerAddress --private-key $privateKey --rpc-url $rpcUrl
+
 ehco 'make approve for token ' $tokenAddress
 cast send $tokenAddress "approve(address,uint256)" $contractAddress 100000000000000000 --private-key $privateKey --rpc-url $rpcUrl
 
